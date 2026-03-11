@@ -1,10 +1,8 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { VoiceConnectionStatus, entersState } = require('@discordjs/voice');
 const playdl = require('play-dl');
 const config = require('../config');
 const { errorEmbed, successEmbed } = require('../utils/logger');
 
-// Import TOUJOURS tardif - jamais au top level
 function mm() { return require('../music/MusicManager'); }
 
 const play = {
@@ -14,8 +12,7 @@ const play = {
     .addStringOption(o => o.setName('query').setDescription('Titre ou URL').setRequired(true)),
 
   async execute(interaction) {
-    await interaction.deferReply();
-
+    // deferReply déjà fait dans index.js
     const query = interaction.options.getString('query');
     const voiceChannel = interaction.member.voice?.channel;
 
@@ -109,53 +106,30 @@ const join = {
     .setDescription('🔊 Rejoint ton salon vocal'),
 
   async execute(interaction) {
-    console.log('[JOIN] 1 - début execute');
-
-    // deferReply en PREMIER, avant tout le reste
-    try {
-      await interaction.deferReply({ flags: 64 });
-      console.log('[JOIN] 2 - deferReply ok');
-    } catch (err) {
-      console.error('[JOIN] deferReply FAILED:', err.message);
-      return; // interaction déjà expirée, on abandonne
-    }
-
+    // deferReply déjà fait dans index.js
     const voiceChannel = interaction.member.voice?.channel;
-    console.log('[JOIN] 3 - voiceChannel:', voiceChannel?.name ?? 'AUCUN');
-
     if (!voiceChannel) {
       return interaction.editReply({ embeds: [errorEmbed('Salon vocal requis', 'Rejoins un salon vocal !')] });
     }
 
     const queue = mm().get(interaction.guildId);
 
-    // Si déjà connecté au même salon, ne pas reconnecter
     if (queue.connection && queue.connection.joinConfig?.channelId === voiceChannel.id) {
-      console.log('[JOIN] 4 - déjà connecté au même salon');
       return interaction.editReply({
         embeds: [successEmbed('Déjà connecté !', `Je suis déjà dans **${voiceChannel.name}**`)]
       });
     }
 
     try {
-      console.log('[JOIN] 5 - tentative join...');
       await queue.join(voiceChannel, interaction.channel);
-      console.log('[JOIN] 6 - join réussi !');
-
       await interaction.editReply({
         embeds: [successEmbed('Connecté !', `Le bot a rejoint **${voiceChannel.name}** ✅`)]
       });
-      console.log('[JOIN] 7 - editReply envoyé');
-
     } catch (err) {
-      console.error('[JOIN] ERREUR:', err.message);
-      try {
-        await interaction.editReply({
-          embeds: [errorEmbed('Erreur de connexion', err.message)]
-        });
-      } catch (e2) {
-        console.error('[JOIN] editReply erreur aussi failed:', e2.message);
-      }
+      console.error('[JOIN ERROR]', err.message);
+      await interaction.editReply({
+        embeds: [errorEmbed('Erreur de connexion', err.message)]
+      });
     }
   },
 };
@@ -166,7 +140,7 @@ const stop = {
     .setDescription('⏹️ Arrête la musique et déconnecte le bot'),
 
   async execute(interaction) {
-    await interaction.deferReply({ flags: 64 });
+    // deferReply déjà fait dans index.js
     mm().delete(interaction.guildId);
     await interaction.editReply({ embeds: [successEmbed('Arrêté', 'Musique stoppée et bot déconnecté.')] });
   },
@@ -178,7 +152,7 @@ const skip = {
     .setDescription('⏭️ Passe à la musique suivante'),
 
   async execute(interaction) {
-    await interaction.deferReply({ flags: 64 });
+    // deferReply déjà fait dans index.js
     const queue = mm().get(interaction.guildId);
     if (!queue.current) {
       return interaction.editReply({ embeds: [errorEmbed('Rien en cours', 'Aucune musique en cours de lecture.')] });
@@ -194,6 +168,7 @@ const queue = {
     .setDescription('📋 Affiche la file d\'attente'),
 
   async execute(interaction) {
+    // Pas de deferReply — cette commande fait son propre reply()
     const q = mm().get(interaction.guildId);
     const e = new EmbedBuilder()
       .setColor(0xb659f5)
@@ -223,9 +198,10 @@ const volume = {
     .addIntegerOption(o => o.setName('valeur').setDescription('Volume 0-100').setMinValue(0).setMaxValue(100).setRequired(true)),
 
   async execute(interaction) {
+    // deferReply déjà fait dans index.js
     const val = interaction.options.getInteger('valeur');
     mm().get(interaction.guildId).setVolume(val);
-    await interaction.reply({ embeds: [successEmbed('Volume réglé', `Volume défini à **${val}%**`)], flags: 64 });
+    await interaction.editReply({ embeds: [successEmbed('Volume réglé', `Volume défini à **${val}%**`)] });
   },
 };
 
