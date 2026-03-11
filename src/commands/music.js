@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { VoiceConnectionStatus, entersState } = require('@discordjs/voice');
 const playdl = require('play-dl');
 const config = require('../config');
 const { errorEmbed, successEmbed } = require('../utils/logger');
@@ -108,7 +109,8 @@ const join = {
     .setDescription('🔊 Rejoint ton salon vocal'),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    // FIX: flags: 64 au lieu de { ephemeral: true } (déprécié)
+    await interaction.deferReply({ flags: 64 });
 
     const voiceChannel = interaction.member.voice?.channel;
     if (!voiceChannel) {
@@ -117,22 +119,24 @@ const join = {
 
     const queue = mm().get(interaction.guildId);
 
-    try {
-      const connection = await queue.join(voiceChannel, interaction.channel);
+    // Si déjà connecté au même salon, ne pas reconnecter
+    if (queue.connection && queue.connection.joinConfig?.channelId === voiceChannel.id) {
+      return interaction.editReply({
+        embeds: [successEmbed('Déjà connecté !', `Je suis déjà dans **${voiceChannel.name}**`)]
+      });
+    }
 
-      // Attendre que la connexion soit prête
-      const { entersState, VoiceConnectionStatus } = require('@discordjs/voice');
-      await entersState(connection, VoiceConnectionStatus.Ready, 30000);
+    try {
+      // FIX: join() dans MusicManager gère déjà entersState + stateChange
+      // On appelle juste join() et on attend le résultat
+      await queue.join(voiceChannel, interaction.channel);
 
       await interaction.editReply({
-        embeds: [successEmbed('Connecté !', `Le bot a rejoint **${voiceChannel.name}**`)]
-      });
-
-      connection.on('stateChange', (oldState, newState) => {
-        console.log(`[VOICE] ${oldState.status} -> ${newState.status}`);
+        embeds: [successEmbed('Connecté !', `Le bot a rejoint **${voiceChannel.name}** ✅`)]
       });
 
     } catch (err) {
+      console.error('[JOIN ERROR]', err.message);
       await interaction.editReply({
         embeds: [errorEmbed('Erreur de connexion', err.message)]
       });
