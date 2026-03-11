@@ -108,18 +108,34 @@ const join = {
     .setDescription('🔊 Rejoint ton salon vocal'),
 
   async execute(interaction) {
-    await interaction.deferReply({ flags: 64 });
+    await interaction.deferReply({ ephemeral: true });
+
     const voiceChannel = interaction.member.voice?.channel;
     if (!voiceChannel) {
       return interaction.editReply({ embeds: [errorEmbed('Salon vocal requis', 'Rejoins un salon vocal !')] });
     }
 
     const queue = mm().get(interaction.guildId);
+
     try {
-      await queue.join(voiceChannel, interaction.channel);
-      await interaction.editReply({ embeds: [successEmbed('Connecté !', `Le bot a rejoint **${voiceChannel.name}**`)] });
+      const connection = await queue.join(voiceChannel, interaction.channel);
+
+      // Attendre que la connexion soit prête
+      const { entersState, VoiceConnectionStatus } = require('@discordjs/voice');
+      await entersState(connection, VoiceConnectionStatus.Ready, 30000);
+
+      await interaction.editReply({
+        embeds: [successEmbed('Connecté !', `Le bot a rejoint **${voiceChannel.name}**`)]
+      });
+
+      connection.on('stateChange', (oldState, newState) => {
+        console.log(`[VOICE] ${oldState.status} -> ${newState.status}`);
+      });
+
     } catch (err) {
-      await interaction.editReply({ embeds: [errorEmbed('Erreur de connexion', err.message)] });
+      await interaction.editReply({
+        embeds: [errorEmbed('Erreur de connexion', err.message)]
+      });
     }
   },
 };
