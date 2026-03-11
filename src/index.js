@@ -50,6 +50,20 @@ const allCommands = [
   utilityCmds.embed,
 ];
 
+// Commandes dont la réponse est éphémère (visible que par l'utilisateur)
+const EPHEMERAL_COMMANDS = new Set([
+  'join', 'stop', 'skip', 'volume',
+  'ban', 'kick', 'mute', 'unban', 'warn',
+  'clear', 'slowmode', 'lock', 'unlock',
+]);
+
+// Commandes qui font leur propre interaction.reply() sans deferReply
+const NO_DEFER_COMMANDS = new Set([
+  'queue', 'userinfo', 'serverinfo', 'avatar',
+  'roleinfo', 'ping', 'botinfo', 'sondage',
+  'embed', 'staff', 'giveaway',
+]);
+
 // ─── CLIENT ───────────────────────────────────────────────────────────────────
 const client = new Client({
   intents: [
@@ -83,22 +97,18 @@ client.once('ready', async () => {
     activities: [{ name: '3 serveurs | /help', type: 3 }],
   });
 
-  // Déploiement des slash commands sur chaque serveur
   await deployCommands();
 
-  // Embed état + staff au démarrage
   setTimeout(async () => {
     await sendStatusEmbed(client);
     await sendStaffEmbed(client);
     console.log('[STATUS] Embeds de démarrage envoyés.');
   }, 3000);
 
-  // Mise à jour des embeds état toutes les 2 minutes
   cron.schedule('*/2 * * * *', async () => {
     await sendStatusEmbed(client);
   });
 
-  // Log global de démarrage
   const startEmbed = new EmbedBuilder()
     .setTitle('🚀 Bot Démarré')
     .setDescription('Le bot est maintenant en ligne et opérationnel sur tous les serveurs.')
@@ -120,25 +130,37 @@ client.on('interactionCreate', async (interaction) => {
   const command = client.commands.get(interaction.commandName);
   if (!command) return;
 
+  const cmdName = interaction.commandName;
+
+  // ─── DEFER IMMÉDIAT ici, AVANT tout traitement ───────────────────────────
+  // Centraliser le deferReply ici garantit qu'il s'exécute en <100ms
+  // et évite le timeout "Unknown interaction" de Discord (3s max)
+  if (!NO_DEFER_COMMANDS.has(cmdName)) {
+    try {
+      const isEphemeral = EPHEMERAL_COMMANDS.has(cmdName);
+      await interaction.deferReply(isEphemeral ? { flags: 64 } : {});
+      console.log(`[CMD] /${cmdName} - deferReply ok (ephemeral: ${isEphemeral})`);
+    } catch (err) {
+      console.error(`[CMD] /${cmdName} - deferReply FAILED:`, err.message);
+      return;
+    }
+  }
+
   try {
-    // FIX: await la commande entière avant de logger
     await command.execute(interaction);
 
-    // Log APRÈS que la commande soit terminée
-    const logEmb = logEmbed(
+    sendLog(client, logEmbed(
       'Commande Exécutée',
-      `**/${interaction.commandName}** utilisée par **${interaction.user.tag}** dans <#${interaction.channelId}>`,
+      `**/${cmdName}** utilisée par **${interaction.user.tag}** dans <#${interaction.channelId}>`,
       config.colors.info
-    );
-    // sendLog en arrière-plan, ne pas await pour ne pas bloquer
-    sendLog(client, logEmb, interaction.guildId).catch(() => {});
+    ), interaction.guildId).catch(() => {});
 
   } catch (err) {
-    console.error(`[CMD ERROR] /${interaction.commandName}: ${err.message}`);
+    console.error(`[CMD ERROR] /${cmdName}: ${err.message}`);
 
     const errorEmbed = new EmbedBuilder()
       .setTitle('❌ Erreur')
-      .setDescription(`Une erreur est survenue lors de l'exécution de la commande.\n\`${err.message}\``)
+      .setDescription(`Une erreur est survenue.\n\`${err.message}\``)
       .setColor(config.colors.error)
       .setTimestamp();
 
@@ -146,7 +168,6 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply({ embeds: [errorEmbed] });
       } else {
-        // FIX: flags: 64 au lieu de ephemeral: true (déprécié)
         await interaction.reply({ embeds: [errorEmbed], flags: 64 });
       }
     } catch (_) {}
@@ -181,7 +202,6 @@ process.on('uncaughtException', err => console.error('[UNCAUGHT]', err));
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 if (!config.token || config.token === 'TON_TOKEN_ICI') {
   console.error('❌ ERREUR: Aucun token Discord trouvé dans le fichier .env !');
-  console.error('→ Modifie le fichier .env et remplace TON_TOKEN_ICI par ton token.');
   process.exit(1);
 }
 
