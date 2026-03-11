@@ -8,14 +8,4 @@
     "restartPolicyType": "ON_FAILURE"
   }
 }
-```
 
-Clique **Commit changes**.
-
----
-
-## 2. Ajoute le token dans Railway
-
-Sur Railway → **Variables** → **Add Variable** :
-```
-DISCORD_TOKEN = MTQ2MzI5NzE1ODAzMDY4ODMyNw.G2seMt.oFj6u-_opDBEBI8Ugnl502RlHyyTd_kucU6Mns
