@@ -13,6 +13,9 @@ const config = require('./config');
 const { registerEvents } = require('./events/events');
 const { sendStatusEmbed, sendStaffEmbed } = require('./utils/statusEmbed');
 const { sendLog, logEmbed } = require('./utils/logger');
+const { startKeepAlive } = require('./keepAlive');
+startKeepAlive();
+PORT=3000
 
 // ─── COMMANDS ─────────────────────────────────────────────────────────────────
 const modCmds = require('./commands/moderation');
