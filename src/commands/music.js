@@ -109,10 +109,20 @@ const join = {
     .setDescription('🔊 Rejoint ton salon vocal'),
 
   async execute(interaction) {
-    // FIX: flags: 64 au lieu de { ephemeral: true } (déprécié)
-    await interaction.deferReply({ flags: 64 });
+    console.log('[JOIN] 1 - début execute');
+
+    // deferReply en PREMIER, avant tout le reste
+    try {
+      await interaction.deferReply({ flags: 64 });
+      console.log('[JOIN] 2 - deferReply ok');
+    } catch (err) {
+      console.error('[JOIN] deferReply FAILED:', err.message);
+      return; // interaction déjà expirée, on abandonne
+    }
 
     const voiceChannel = interaction.member.voice?.channel;
+    console.log('[JOIN] 3 - voiceChannel:', voiceChannel?.name ?? 'AUCUN');
+
     if (!voiceChannel) {
       return interaction.editReply({ embeds: [errorEmbed('Salon vocal requis', 'Rejoins un salon vocal !')] });
     }
@@ -121,25 +131,31 @@ const join = {
 
     // Si déjà connecté au même salon, ne pas reconnecter
     if (queue.connection && queue.connection.joinConfig?.channelId === voiceChannel.id) {
+      console.log('[JOIN] 4 - déjà connecté au même salon');
       return interaction.editReply({
         embeds: [successEmbed('Déjà connecté !', `Je suis déjà dans **${voiceChannel.name}**`)]
       });
     }
 
     try {
-      // FIX: join() dans MusicManager gère déjà entersState + stateChange
-      // On appelle juste join() et on attend le résultat
+      console.log('[JOIN] 5 - tentative join...');
       await queue.join(voiceChannel, interaction.channel);
+      console.log('[JOIN] 6 - join réussi !');
 
       await interaction.editReply({
         embeds: [successEmbed('Connecté !', `Le bot a rejoint **${voiceChannel.name}** ✅`)]
       });
+      console.log('[JOIN] 7 - editReply envoyé');
 
     } catch (err) {
-      console.error('[JOIN ERROR]', err.message);
-      await interaction.editReply({
-        embeds: [errorEmbed('Erreur de connexion', err.message)]
-      });
+      console.error('[JOIN] ERREUR:', err.message);
+      try {
+        await interaction.editReply({
+          embeds: [errorEmbed('Erreur de connexion', err.message)]
+        });
+      } catch (e2) {
+        console.error('[JOIN] editReply erreur aussi failed:', e2.message);
+      }
     }
   },
 };
