@@ -10,7 +10,6 @@ const {
 } = require('@discordjs/voice');
 const playdl = require('play-dl');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const config = require('../config');
 
 async function getStream(url) {
   try {
@@ -29,6 +28,7 @@ class MusicQueue {
     this.playerMessage = null;
     this.loop = false;
     this.volume = 0.5;
+    this.textChannel = null;
 
     this.player = createAudioPlayer({
       behaviors: { noSubscriber: NoSubscriberBehavior.Play },
@@ -55,6 +55,7 @@ class MusicQueue {
     try {
       console.log(`[MUSIC] Playing: ${track.title}`);
       const stream = await getStream(track.url);
+      if (!stream?.stream) throw new Error('Impossible de récupérer le flux audio');
       const resource = createAudioResource(stream.stream, {
         inputType: stream.type,
         inlineVolume: true,
@@ -72,19 +73,11 @@ class MusicQueue {
   }
 
   async join(voiceChannel, textChannel) {
-    // Detruire proprement l'ancienne connexion
-    const existing = getVoiceConnection(voiceChannel.guild.id);
-    if (existing) {
-      existing.destroy();
-      await new Promise(r => setTimeout(r, 1000));
-    }
-    if (this.connection) {
-      try { this.connection.destroy(); } catch (_) {}
-      this.connection = null;
-      await new Promise(r => setTimeout(r, 500));
-    }
+    this.textChannel = textChannel;
 
-    console.log(`[MUSIC] Joining ${voiceChannel.name}`);
+    // Détruire ancienne connexion si elle existe
+    const existing = getVoiceConnection(voiceChannel.guild.id);
+    if (existing) existing.destroy();
 
     this.connection = joinVoiceChannel({
       channelId: voiceChannel.id,
@@ -92,53 +85,39 @@ class MusicQueue {
       adapterCreator: voiceChannel.guild.voiceAdapterCreator,
       selfDeaf: true,
       selfMute: false,
-      debug: true,
     });
 
-    this.connection.on('stateChange', (o, n) => {
-      console.log(`[VOICE] ${o.status} -> ${n.status}`);
+    this.connection.on('stateChange', (oldState, newState) => {
+      console.log(`[VOICE] ${oldState.status} -> ${newState.status}`);
     });
 
-    this.connection.on('error', err => {
-      console.error('[CONNECTION ERROR]', err.message);
-    });
+    this.connection.on('error', err => console.error('[CONNECTION ERROR]', err.message));
 
     this.connection.on(VoiceConnectionStatus.Disconnected, async () => {
-      console.log('[VOICE] Disconnected - attempting reconnect...');
+      console.log('[VOICE] Disconnected, tentative de reconnexion...');
       try {
         await Promise.race([
           entersState(this.connection, VoiceConnectionStatus.Signalling, 5000),
           entersState(this.connection, VoiceConnectionStatus.Connecting, 5000),
         ]);
-        console.log('[VOICE] Reconnected!');
+        console.log('[VOICE] Reconnecté !');
       } catch {
-        console.log('[VOICE] Reconnect failed.');
-        try { this.connection.destroy(); } catch (_) {}
+        console.log('[VOICE] Reconnexion échouée, destruction.');
+        this.connection.destroy();
         this.connection = null;
       }
     });
 
-    // Attendre Ready avec retry
-    let attempts = 0;
-    while (attempts < 3) {
-      try {
-        await entersState(this.connection, VoiceConnectionStatus.Ready, 15000);
-        console.log('[VOICE] Ready!');
-        break;
-      } catch (err) {
-        attempts++;
-        console.log(`[VOICE] Attempt ${attempts} failed: ${err.message}`);
-        if (attempts >= 3) {
-          try { this.connection.destroy(); } catch (_) {}
-          this.connection = null;
-          throw new Error('Impossible de rejoindre le salon vocal après 3 tentatives.');
-        }
-        await new Promise(r => setTimeout(r, 2000));
-      }
+    try {
+      await entersState(this.connection, VoiceConnectionStatus.Ready, 15000);
+      console.log('[VOICE] Ready !');
+    } catch (err) {
+      this.connection.destroy();
+      this.connection = null;
+      throw new Error('Impossible de rejoindre le salon vocal.');
     }
 
     this.connection.subscribe(this.player);
-    this.textChannel = textChannel;
     return this.connection;
   }
 
@@ -186,7 +165,9 @@ class MusicQueue {
       );
     if (track.thumbnail) e.setThumbnail(track.thumbnail);
     if (this.tracks.length > 0) {
-      const list = this.tracks.slice(0, 5).map((t, i) => `\`${i + 1}.\` ${t.title} — *${t.requestedBy}*`).join('\n');
+      const list = this.tracks.slice(0, 5)
+        .map((t, i) => `\`${i + 1}.\` ${t.title} — *${t.requestedBy}*`)
+        .join('\n');
       e.addFields({ name: `📋 File d'attente (${this.tracks.length})`, value: list });
     }
     return e;
