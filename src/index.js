@@ -88,7 +88,7 @@ for (const cmd of allCommands) {
 }
 
 // ─── READY ────────────────────────────────────────────────────────────────────
-client.once('ready', async () => {
+client.once('clientReady', async () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
   console.log(`📡 Serveurs: ${client.guilds.cache.size}`);
 
