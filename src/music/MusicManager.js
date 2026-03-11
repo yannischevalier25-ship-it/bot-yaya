@@ -29,6 +29,7 @@ class MusicQueue {
     this.loop = false;
     this.volume = 0.5;
     this.textChannel = null;
+    this._reconnecting = false; // flag pour éviter les boucles de reconnexion
 
     this.player = createAudioPlayer({
       behaviors: { noSubscriber: NoSubscriberBehavior.Play },
@@ -75,46 +76,67 @@ class MusicQueue {
   async join(voiceChannel, textChannel) {
     this.textChannel = textChannel;
 
-    // Détruire ancienne connexion si elle existe
+    // Détruire ancienne connexion proprement
     const existing = getVoiceConnection(voiceChannel.guild.id);
-    if (existing) existing.destroy();
+    if (existing) {
+      try { existing.destroy(); } catch (_) {}
+    }
+    // Attendre que la destruction soit prise en compte
+    await new Promise(r => setTimeout(r, 500));
 
     this.connection = joinVoiceChannel({
       channelId: voiceChannel.id,
       guildId: voiceChannel.guild.id,
       adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-      selfDeaf: true,
+      selfDeaf: false, // FIX: selfDeaf: true peut causer des problèmes sur Railway
       selfMute: false,
     });
 
+    // ⚠️ Enregistrer le stateChange AVANT entersState
     this.connection.on('stateChange', (oldState, newState) => {
       console.log(`[VOICE] ${oldState.status} -> ${newState.status}`);
     });
 
-    this.connection.on('error', err => console.error('[CONNECTION ERROR]', err.message));
+    this.connection.on('error', err => {
+      console.error('[CONNECTION ERROR]', err.message);
+    });
 
+    // Gestion de la déconnexion avec tentative de reconnexion
     this.connection.on(VoiceConnectionStatus.Disconnected, async () => {
+      if (this._reconnecting) return;
+      this._reconnecting = true;
       console.log('[VOICE] Disconnected, tentative de reconnexion...');
       try {
+        // Attendre qu'on repasse en Signalling ou Connecting (reconnexion auto Discord)
         await Promise.race([
-          entersState(this.connection, VoiceConnectionStatus.Signalling, 5000),
-          entersState(this.connection, VoiceConnectionStatus.Connecting, 5000),
+          entersState(this.connection, VoiceConnectionStatus.Signalling, 5_000),
+          entersState(this.connection, VoiceConnectionStatus.Connecting, 5_000),
         ]);
+        // Si on y arrive, attendre Ready
+        await entersState(this.connection, VoiceConnectionStatus.Ready, 10_000);
         console.log('[VOICE] Reconnecté !');
       } catch {
         console.log('[VOICE] Reconnexion échouée, destruction.');
-        this.connection.destroy();
+        try { this.connection.destroy(); } catch (_) {}
         this.connection = null;
+      } finally {
+        this._reconnecting = false;
       }
     });
 
+    // FIX: Augmenté à 30s pour Railway qui est plus lent à établir UDP
     try {
-      await entersState(this.connection, VoiceConnectionStatus.Ready, 15000);
+      await entersState(this.connection, VoiceConnectionStatus.Ready, 30_000);
       console.log('[VOICE] Ready !');
     } catch (err) {
-      this.connection.destroy();
+      console.error('[VOICE] Timeout - impossible de rejoindre:', err.message);
+      try { this.connection.destroy(); } catch (_) {}
       this.connection = null;
-      throw new Error('Impossible de rejoindre le salon vocal.');
+      throw new Error(
+        'Impossible de rejoindre le salon vocal. ' +
+        'Railway peut bloquer les connexions UDP nécessaires à Discord Voice. ' +
+        'Essaie Render ou Fly.io à la place.'
+      );
     }
 
     this.connection.subscribe(this.player);
@@ -136,6 +158,7 @@ class MusicQueue {
     this.tracks = [];
     this.current = null;
     this.loop = false;
+    this._reconnecting = false;
     this.player.stop(true);
     if (this.connection) {
       try { this.connection.destroy(); } catch (_) {}
