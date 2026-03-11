@@ -121,15 +121,18 @@ client.on('interactionCreate', async (interaction) => {
   if (!command) return;
 
   try {
+    // FIX: await la commande entière avant de logger
     await command.execute(interaction);
 
-    // Log de la commande
+    // Log APRÈS que la commande soit terminée
     const logEmb = logEmbed(
       'Commande Exécutée',
       `**/${interaction.commandName}** utilisée par **${interaction.user.tag}** dans <#${interaction.channelId}>`,
       config.colors.info
     );
-    await sendLog(client, logEmb, interaction.guildId);
+    // sendLog en arrière-plan, ne pas await pour ne pas bloquer
+    sendLog(client, logEmb, interaction.guildId).catch(() => {});
+
   } catch (err) {
     console.error(`[CMD ERROR] /${interaction.commandName}: ${err.message}`);
 
@@ -143,7 +146,8 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply({ embeds: [errorEmbed] });
       } else {
-        await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+        // FIX: flags: 64 au lieu de ephemeral: true (déprécié)
+        await interaction.reply({ embeds: [errorEmbed], flags: 64 });
       }
     } catch (_) {}
   }
