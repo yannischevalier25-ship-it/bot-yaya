@@ -13,8 +13,6 @@ const config = require('./config');
 const { registerEvents } = require('./events/events');
 const { sendStatusEmbed, sendStaffEmbed } = require('./utils/statusEmbed');
 const { sendLog, logEmbed } = require('./utils/logger');
-const { startKeepAlive } = require('./keepAlive');
-startKeepAlive();
 
 // ─── COMMANDS ─────────────────────────────────────────────────────────────────
 const modCmds = require('./commands/moderation');
@@ -90,7 +88,7 @@ for (const cmd of allCommands) {
 }
 
 // ─── READY ────────────────────────────────────────────────────────────────────
-client.once('clientReady', async () => {
+client.once('ready', async () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
   console.log(`📡 Serveurs: ${client.guilds.cache.size}`);
 
