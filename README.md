@@ -1,1 +1,0 @@
-config pour TON bot
